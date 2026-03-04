@@ -8,9 +8,6 @@
 			figure { text-align: center; }
 			img { display: inline-block; max-width: 100%; }
 			body { font-family: 'Inter', sans-serif; line-height: 1.5; }
-			pre, code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; }
-			pre { padding: 12px; overflow-x: auto; }
-			pre code { padding: 0; background: none; }
 			table { border-collapse: collapse; width: 100%; margin: 1em 0; }
 			th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 			th { background: #f4f4f4; }
@@ -60,16 +57,10 @@
 		<p>I implemented triangle rasterization using edge functions. The algorithm works as follows:</p>
 		<ol>
 			<li><b>Compute bounding box</b>: Find the min/max x and y coordinates of the three vertices to get the bounding box.</li>
-			<li><b>Convert to pixel coordinates</b>: Use <code>floor()</code> for min values and <code>ceil()</code> for max values to get the pixel range.</li>
+			<li><b>Convert to pixel coordinates</b>: Use floor() for min values and ceil() for max values to get the pixel range.</li>
 			<li><b>Clamp to screen</b>: Make sure the bounding box stays within the framebuffer bounds.</li>
-			<li><b>Iterate through pixels</b>: For each pixel in the bounding box:
-				<ul>
-					<li>Sample at pixel center: <code>(x + 0.5, y + 0.5)</code></li>
-					<li>Test if this point is inside the triangle using edge functions</li>
-				</ul>
-			</li>
-			<li><b>Edge function</b>: For an edge from point A to B, the edge function is:
-				<pre><code>f(x, y) = (y - yA) * (xB - xA) - (x - xA) * (yB - yA)</code></pre>
+			<li><b>Iterate through pixels</b>: For each pixel in the bounding box, sample at pixel center and test if inside the triangle using edge functions.</li>
+			<li><b>Edge function</b>: For an edge from point A to B, the edge function gives positive = left (counter-clockwise), negative = right (clockwise), zero = on the edge.
 				<ul>
 					<li>Positive = point is to the left (counter-clockwise)</li>
 					<li>Negative = point is to the right (clockwise)</li>
@@ -77,54 +68,27 @@
 				</ul>
 			</li>
 			<li><b>Inside test</b>: A point is inside if all three edge function values have the same sign (or zero). This handles both clockwise and counter-clockwise ordering.</li>
-			<li><b>Fill pixel</b>: If inside, call <code>fill_pixel(x, y, color)</code>.</li>
+			<li><b>Fill pixel</b>: If inside, fill the pixel with the color.</li>
 		</ol>
 
 		<h3>Algorithm efficiency: no worse than bounding box sampling</h3>
-		<p>The algorithm only checks pixels within the triangle's bounding box. The bounding box is <code>[min_x, max_x] × [min_y, max_y]</code>, and I iterate through exactly these pixels:</p>
-		<pre><code>for (int y = start_y; y &lt;= end_y; y++) {
-  for (int x = start_x; x &lt;= end_x; x++) {
-    // Check sample at (x+0.5, y+0.5)
-  }
-}</code></pre>
-		<p>where <code>start_x = floor(min_x)</code>, <code>end_x = ceil(max_x)</code>, etc.</p>
-		<p>I don't check any pixels outside the bounding box, and I check every pixel inside it. So the number of samples is exactly <code>(end_x - start_x + 1) × (end_y - start_y + 1)</code>, which is the minimum needed. The complexity is O(area of bounding box), which is optimal for this approach.</p>
+		<p>The algorithm only checks pixels within the triangle's bounding box. I iterate through exactly these pixels (start_x = floor(min_x), end_x = ceil(max_x), etc.). I don't check any pixels outside the bounding box, and I check every pixel inside it. So the number of samples is the minimum needed. The complexity is O(area of bounding box), which is optimal for this approach.</p>
 
 		<h3>Screenshot of basic/test4.svg</h3>
 		<figure>
 			<img src="myimg/T1-test4.png" alt="test4.svg screenshot"/>
 			<figcaption></figcaption>
 		</figure>
-		<p>This screenshot shows the rendering of <code>basic/test4.svg</code> with the pixel inspector centered on an interesting part of the scene. The image demonstrates that triangles are correctly rasterized, including the rectangle borders which are drawn as thin triangles.</p>
+		<p>This screenshot shows the rendering of basic/test4.svg with the pixel inspector centered on an interesting part of the scene. The image demonstrates that triangles are correctly rasterized, including the rectangle borders which are drawn as thin triangles.</p>
 
 		<h3>Extra Credit: Optimizations</h3>
 		<p>I implemented a few optimizations to speed up the rasterization:</p>
 
 		<h4>1. Pre-compute Edge Function Coefficients</h4>
-		<p>I compute the edge vectors and constants once before the loops instead of recalculating them for every pixel:</p>
-		<pre><code>double dx01 = x1 - x0;
-double dy01 = y1 - y0;
-double c01 = -y0 * dx01 + x0 * dy01;
-// ... same for edges 1-&gt;2 and 2-&gt;0</code></pre>
-		<p>This avoids recalculating <code>(x1-x0)</code>, <code>(y1-y0)</code> etc. for every pixel.</p>
+		<p>I compute the edge vectors and constants once before the loops instead of recalculating them for every pixel. This avoids recalculating (x1-x0), (y1-y0) etc. for every pixel.</p>
 
 		<h4>2. Incremental Edge Function Evaluation</h4>
-		<p>Edge functions can be evaluated incrementally. The edge function is:</p>
-		<pre><code>f(x, y) = y * dx - x * dy + c</code></pre>
-		<p>When moving from <code>(x, y)</code> to <code>(x+1, y)</code>, the value changes by:</p>
-		<pre><code>f(x+1, y) = f(x, y) - dy</code></pre>
-		<p>So I compute the initial edge function values once per row, then just subtract <code>dy</code> when moving right:</p>
-		<pre><code>for (int y = start_y; y &lt;= end_y; y++) {
-    double f01 = sample_y * dx01 - sample_x_init * dy01 + c01;
-    // ...
-    for (int x = start_x; x &lt;= end_x; x++) {
-        // test if inside
-        f01 -= dy01;  // just subtract instead of recalculating
-        f12 -= dy12;
-        f20 -= dy20;
-    }
-}</code></pre>
-		<p>This reduces per-pixel computation from 6 multiplications + 6 additions to just 3 subtractions.</p>
+		<p>Edge functions can be evaluated incrementally. When moving from (x, y) to (x+1, y), the value changes by subtracting dy. So I compute the initial edge function values once per row, then just subtract dy when moving right. This reduces per-pixel computation from 6 multiplications + 6 additions to just 3 subtractions.</p>
 
 		<h4>3. Reduced Memory Access</h4>
 		<p>Keeping edge function values in local variables (registers) and updating them incrementally improves cache locality.</p>
@@ -133,7 +97,7 @@ double c01 = -y0 * dx01 + x0 * dy01;
 		<p>The optimizations reduce arithmetic operations from ~12 per pixel (6 mult + 6 add) to ~3 per pixel (3 subtract), which is about 75% reduction.</p>
 
 		<h4>Timing Comparison</h4>
-		<p>I added timing code using <code>std::chrono::high_resolution_clock</code> in <code>DrawRend::redraw()</code>. Here are the results comparing the basic and optimized implementations:</p>
+		<p>I added timing code in DrawRend::redraw(). Here are the results comparing the basic and optimized implementations:</p>
 		<table>
 			<tr><th>Test Case</th><th>Basic</th><th>Optimized</th><th>Speedup</th></tr>
 			<tr><td>test3.svg</td><td>16.951 ms</td><td>15.396 ms</td><td>1.10x</td></tr>
@@ -157,35 +121,14 @@ double c01 = -y0 * dx01 + x0 * dy01;
 		<p>I implemented supersampling by treating the sample buffer as a higher-resolution framebuffer. The implementation works as follows:</p>
 
 		<h4>Data Structure</h4>
-		<p>The <code>sample_buffer</code> is a 1D vector of <code>Color</code> objects with size <code>width * height * sample_rate</code>. For each pixel at position <code>(x, y)</code>, there are <code>sample_rate</code> samples stored consecutively:</p>
-		<pre><code>base_index = (y * width + x) * sample_rate
-sample_buffer[base_index + 0] ... sample_buffer[base_index + sample_rate - 1]</code></pre>
+		<p>The sample_buffer is a 1D vector of Color objects with size width × height × sample_rate. For each pixel at position (x, y), there are sample_rate samples stored consecutively.</p>
 
 		<h4>Algorithm</h4>
 		<ol>
-			<li><b>Compute grid layout</b>: For <code>sample_rate = n</code>, I create a <code>sqrt(n) × sqrt(n)</code> grid. For example, <code>sample_rate = 16</code> gives a 4×4 grid.</li>
-			<li><b>Sample positions</b>: Within each pixel, I place samples at grid locations:
-				<ul>
-					<li>Grid sampling: <code>(i + 0.5) / grid_size</code> for each grid cell <code>(i, j)</code></li>
-					<li>Jittered sampling: Add random offset to grid positions</li>
-				</ul>
-			</li>
-			<li><b>Rasterization</b>: For each pixel in the triangle's bounding box:
-				<ul>
-					<li>For each sample position within the pixel:
-						<ul>
-							<li>Test if the sample point is inside the triangle using edge functions</li>
-							<li>If inside, store the triangle color in <code>sample_buffer[base_index + sample_index]</code></li>
-						</ul>
-					</li>
-				</ul>
-			</li>
-			<li><b>Resolve to framebuffer</b>: After all primitives are rasterized:
-				<ul>
-					<li>For each pixel, average all <code>sample_rate</code> samples</li>
-					<li>Convert the averaged color to 8-bit RGB and write to <code>rgb_framebuffer_target</code></li>
-				</ul>
-			</li>
+			<li><b>Compute grid layout</b>: For sample_rate = n, I create a sqrt(n) × sqrt(n) grid. For example, sample_rate = 16 gives a 4×4 grid.</li>
+			<li><b>Sample positions</b>: Within each pixel, I place samples at grid locations (grid sampling or jittered sampling with random offset).</li>
+			<li><b>Rasterization</b>: For each pixel in the triangle's bounding box, for each sample position, test if inside the triangle and store the triangle color if inside.</li>
+			<li><b>Resolve to framebuffer</b>: After all primitives are rasterized, for each pixel average all sample_rate samples and convert to 8-bit RGB.</li>
 		</ol>
 
 		<h3>Why is supersampling useful?</h3>
@@ -198,30 +141,11 @@ sample_buffer[base_index + 0] ... sample_buffer[base_index + sample_rate - 1]</c
 
 		<h3>Modifications to the rasterization pipeline</h3>
 		<ol>
-			<li><b><code>fill_pixel()</code></b>: Modified to fill all <code>sample_rate</code> samples for a pixel (used by points and lines)</li>
-			<li><b><code>rasterize_triangle()</code></b>:
-				<ul>
-					<li>Changed from single sample per pixel to multiple samples per pixel</li>
-					<li>Samples are placed in a grid pattern within each pixel</li>
-					<li>Each sample is tested independently against the triangle</li>
-				</ul>
-			</li>
-			<li><b><code>resolve_to_framebuffer()</code></b>:
-				<ul>
-					<li>Averages all samples for each pixel</li>
-					<li>Converts from floating-point <code>Color</code> to 8-bit RGB</li>
-				</ul>
-			</li>
-			<li><b><code>set_sample_rate()</code> and <code>set_framebuffer_target()</code></b>:
-				<ul>
-					<li>Updated to resize <code>sample_buffer</code> to <code>width * height * sample_rate</code></li>
-				</ul>
-			</li>
-			<li><b><code>clear_buffers()</code></b>:
-				<ul>
-					<li>Clears the <code>sample_buffer</code> at the start of each frame</li>
-				</ul>
-			</li>
+			<li><b>fill_pixel()</b>: Modified to fill all sample_rate samples for a pixel (used by points and lines)</li>
+			<li><b>rasterize_triangle()</b>: Changed from single sample per pixel to multiple samples per pixel; samples in a grid pattern; each sample tested independently against the triangle.</li>
+			<li><b>resolve_to_framebuffer()</b>: Averages all samples for each pixel; converts from floating-point Color to 8-bit RGB.</li>
+			<li><b>set_sample_rate() and set_framebuffer_target()</b>: Updated to resize sample_buffer to width × height × sample_rate.</li>
+			<li><b>clear_buffers()</b>: Clears the sample_buffer at the start of each frame.</li>
 		</ol>
 
 		<h3>How supersampling antialiases triangles</h3>
@@ -258,23 +182,11 @@ sample_buffer[base_index + 0] ... sample_buffer[base_index + sample_rate - 1]</c
 		<p>I implemented <b>Jittered Sampling</b> as an alternative to grid-based supersampling.</p>
 
 		<h4>Implementation</h4>
-		<p>Instead of placing samples at regular grid positions, jittered sampling adds a random offset to each grid position:</p>
-		<pre><code>// Grid position
-double grid_x = (i + 0.5) * step;
-double grid_y = (j + 0.5) * step;
-
-// Add jitter (random offset within grid cell)
-double jitter_x = hash(x, y, i, j) * step * 0.5;
-double jitter_y = hash(x, y, i, j + grid_size) * step * 0.5;
-
-// Final sample position
-sample_x = x + grid_x + jitter_x;
-sample_y = y + grid_y + jitter_y;</code></pre>
-		<p>The jitter is generated using a hash function based on pixel position and sample index, ensuring:</p>
+		<p>Instead of placing samples at regular grid positions, jittered sampling adds a random offset to each grid position. The jitter is generated using a hash function based on pixel position and sample index, ensuring:</p>
 		<ul>
 			<li><b>Deterministic</b>: Same pixel always gets same jitter (reproducible)</li>
 			<li><b>Random-looking</b>: Breaks up regular patterns</li>
-			<li><b>Bounded</b>: Jitter is limited to <code>[-step/2, step/2)</code> to keep samples within pixel bounds</li>
+			<li><b>Bounded</b>: Jitter is limited to keep samples within pixel bounds</li>
 		</ul>
 
 		<h4>Comparison: Grid vs Jittered Sampling</h4>
@@ -296,46 +208,30 @@ sample_y = y + grid_y + jitter_y;</code></pre>
 			<li><b>Grid sampling</b>: Faster (no hash computation), predictable, good for general use</li>
 			<li><b>Jittered sampling</b>: Better for scenes with thin lines, small features, or when grid patterns are visible</li>
 		</ul>
-		<p>Users can toggle between modes using the <code>P</code> key:</p>
-		<ul>
-			<li><code>P_NEAREST</code> = Grid sampling</li>
-			<li><code>P_LINEAR</code> = Jittered sampling</li>
-		</ul>
+		<p>Users can toggle between modes using the P key: P_NEAREST = Grid sampling, P_LINEAR = Jittered sampling.</p>
 
 		<div style="page-break-after: always;"></div>
 
 		<h2>Task 3: Transforms</h2>
 
 		<h3>Implementation</h3>
-		<p>I implemented the three transform functions in <code>transforms.cpp</code>:</p>
+		<p>I implemented the three transform functions in transforms.cpp:</p>
 
-		<h4>1. <code>translate(dx, dy)</code></h4>
-		<p>Returns a translation matrix in homogeneous coordinates:</p>
-		<pre><code>[1  0  dx]
-[0  1  dy]
-[0  0  1 ]</code></pre>
-		<p>This matrix translates points by <code>(dx, dy)</code> in the x and y directions.</p>
+		<h4>1. translate(dx, dy)</h4>
+		<p>Returns a translation matrix in homogeneous coordinates. This matrix translates points by (dx, dy) in the x and y directions.</p>
 
-		<h4>2. <code>scale(sx, sy)</code></h4>
-		<p>Returns a scaling matrix in homogeneous coordinates:</p>
-		<pre><code>[sx  0   0]
-[0   sy  0]
-[0   0   1]</code></pre>
-		<p>This matrix scales points by <code>sx</code> in the x direction and <code>sy</code> in the y direction.</p>
+		<h4>2. scale(sx, sy)</h4>
+		<p>Returns a scaling matrix in homogeneous coordinates. This matrix scales points by sx in the x direction and sy in the y direction.</p>
 
-		<h4>3. <code>rotate(deg)</code></h4>
-		<p>Returns a rotation matrix (counterclockwise) in homogeneous coordinates:</p>
-		<pre><code>[cos(θ)  -sin(θ)  0]
-[sin(θ)   cos(θ)  0]
-[0        0       1]</code></pre>
-		<p>The input <code>deg</code> is in degrees and is converted to radians. The rotation is counterclockwise as per SVG specification.</p>
+		<h4>3. rotate(deg)</h4>
+		<p>Returns a rotation matrix (counterclockwise) in homogeneous coordinates. The input deg is in degrees and is converted to radians. The rotation is counterclockwise as per SVG specification.</p>
 
 		<h3>Custom Robot: Waving Cubeman</h3>
-		<p>I created a custom robot SVG (<code>docs/my_robot.svg</code>) with the following modifications:</p>
+		<p>I created a custom robot SVG (docs/my_robot.svg) with the following modifications:</p>
 
 		<h4>Changes Made:</h4>
 		<ol>
-			<li><b>Color scheme</b>: Changed from red to blue for the body (<code>#4A90E2</code>) and darker blue for the head (<code>#2E5C8A</code>), with orange arms (<code>#E8A87C</code>)</li>
+			<li><b>Color scheme</b>: Changed from red to blue for the body and darker blue for the head, with orange arms.</li>
 			<li><b>Waving animation</b>: Modified the left arm to create a waving gesture:
 				<ul>
 					<li>Upper arm: Rotated -45 degrees (raised up)</li>
@@ -352,35 +248,17 @@ sample_y = y + grid_y + jitter_y;</code></pre>
 		<p>This screenshot shows the cubeman with his left arm raised in a waving position, demonstrating the use of hierarchical transforms (translate, rotate, scale) to create a more dynamic pose.</p>
 
 		<h3>Extra Credit: Viewport Rotation</h3>
-		<p>I implemented viewport rotation using the <code>Q</code> and <code>E</code> keys:</p>
-		<ul>
-			<li><b>Q key</b>: Rotates viewport counterclockwise by 15 degrees</li>
-			<li><b>E key</b>: Rotates viewport clockwise by 15 degrees</li>
-			<li><b>Space key</b>: Resets rotation to 0 degrees (along with view reset)</li>
-		</ul>
+		<p>I implemented viewport rotation using the Q and E keys: Q = counterclockwise 15°, E = clockwise 15°, Space = reset rotation.</p>
 
 		<h4>Implementation Details</h4>
-		<p>I added a <code>view_rotation</code> member variable to <code>DrawRend</code> class to track the current rotation angle. I modified the <code>set_view()</code> function to apply rotation to the <code>svg_to_ndc</code> transformation matrix. The rotation is applied in NDC (Normalized Device Coordinates) space around the center point (0.5, 0.5):</p>
-		<pre><code>// Base transformation: translate and scale to NDC
-Matrix3x3 base = Matrix3x3(1, 0, -x + span, 0, 1, -y + span, 0, 0, 2 * span);
-
-// Apply viewport rotation around NDC center
-if (view_rotation != 0.0f) {
-    Matrix3x3 rot = rotate(view_rotation);
-    Matrix3x3 translate_to_center = translate(-0.5f, -0.5f);
-    Matrix3x3 translate_back = translate(0.5f, 0.5f);
-    svg_to_ndc[current_svg] = translate_back * rot * translate_to_center * base;
-} else {
-    svg_to_ndc[current_svg] = base;
-}</code></pre>
-		<p>The rotation is composed as:</p>
+		<p>I added a view_rotation member variable to DrawRend class and modified set_view() to apply rotation to the svg_to_ndc transformation matrix in NDC space around the center point (0.5, 0.5). The rotation is composed as:</p>
 		<ol>
 			<li>Apply base transformation (translate and scale from SVG to NDC)</li>
 			<li>Translate to NDC origin (-0.5, -0.5)</li>
 			<li>Apply rotation</li>
 			<li>Translate back to NDC center (0.5, 0.5)</li>
 		</ol>
-		<p>This ensures the viewport rotates around its center in NDC space, not around the origin. The <code>view_rotation</code> variable is initialized to 0.0f in <code>init()</code> and reset to 0.0f when the space key is pressed.</p>
+		<p>This ensures the viewport rotates around its center in NDC space, not around the origin. The view_rotation variable is initialized in init() and reset when the space key is pressed.</p>
 
 		<h4>Demonstration</h4>
 		<figure><img src="myimg/T3-robot-original.png" alt="Original robot"/></figure>
@@ -396,9 +274,7 @@ if (view_rotation != 0.0f) {
 		<h2>Task 4: Barycentric Coordinates</h2>
 
 		<h3>Explanation of Barycentric Coordinates</h3>
-		<p>Barycentric coordinates provide a way to represent any point inside a triangle as a weighted combination of the triangle's three vertices. For a triangle with vertices A, B, and C, any point P inside the triangle can be expressed as:</p>
-		<pre><code>P = α·A + β·B + γ·C</code></pre>
-		<p>where α, β, and γ are the barycentric coordinates satisfying:</p>
+		<p>Barycentric coordinates provide a way to represent any point inside a triangle as a weighted combination of the triangle's three vertices. For a triangle with vertices A, B, and C, any point P inside can be expressed as P = α·A + β·B + γ·C, where α, β, and γ are the barycentric coordinates satisfying:</p>
 		<ul>
 			<li>α + β + γ = 1</li>
 			<li>α ≥ 0, β ≥ 0, γ ≥ 0 (for points inside the triangle)</li>
@@ -429,34 +305,11 @@ if (view_rotation != 0.0f) {
 		<p>The color wheel shown below demonstrates this interpolation effect across many triangles, each with different vertex colors that blend smoothly.</p>
 
 		<h3>Implementation</h3>
-		<p>I implemented <code>rasterize_interpolated_color_triangle()</code> by:</p>
-		<ol>
-			<li><b>Computing bounding box</b> and iterating through pixels (same as Task 1)</li>
-			<li><b>Using edge functions</b> to determine if a sample point is inside the triangle</li>
-			<li><b>Calculating barycentric coordinates</b> using the edge function values:
-				<pre><code>// Edge functions give signed areas (twice the area)
-double f01 = sample_y * dx01 - sample_x * dy01 + c01;  // For edge 0-&gt;1
-double f12 = sample_y * dx12 - sample_x * dy12 + c12;  // For edge 1-&gt;2
-double f20 = sample_y * dx20 - sample_x * dy20 + c20;  // For edge 2-&gt;0
-
-// Triangle area (twice the area)
-double area_abc = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-double inv_area_abc = 1.0 / area_abc;
-
-// Barycentric coordinates
-double alpha = f12 * inv_area_abc;  // Weight for vertex 0
-double beta = f20 * inv_area_abc;   // Weight for vertex 1
-double gamma = f01 * inv_area_abc;  // Weight for vertex 2</code></pre>
-			</li>
-			<li><b>Interpolating colors</b> using the barycentric coordinates:
-				<pre><code>Color interpolated_color = alpha * c0 + beta * c1 + gamma * c2;</code></pre>
-			</li>
-		</ol>
-		<p>The edge functions <code>f12</code>, <code>f20</code>, and <code>f01</code> give us the signed areas of triangles P12, P20, and P01 respectively (scaled by 2). Dividing by the triangle's area gives us the barycentric coordinates.</p>
+		<p>I implemented rasterize_interpolated_color_triangle() by: (1) computing bounding box and iterating through pixels; (2) using edge functions to determine if a sample point is inside the triangle; (3) calculating barycentric coordinates using the edge function values (edge functions give signed areas, divide by triangle area for α, β, γ); (4) interpolating colors as alpha×c0 + beta×c1 + gamma×c2. The edge functions f12, f20, f01 give the signed areas; dividing by the triangle's area gives the barycentric coordinates.</p>
 
 		<h3>Screenshot of test7.svg (Color Wheel)</h3>
 		<figure><img src="myimg/T4-test7.png" alt="Color Wheel"/></figure>
-		<p>This screenshot shows <code>svg/basic/test7.svg</code> rendered with sample rate 1. The color wheel is composed of many small triangles, each with interpolated colors at their vertices. The smooth color transitions demonstrate that barycentric interpolation is working correctly.</p>
+		<p>This screenshot shows svg/basic/test7.svg rendered with sample rate 1. The color wheel is composed of many small triangles, each with interpolated colors at their vertices. The smooth color transitions demonstrate that barycentric interpolation is working correctly.</p>
 
 		<div style="page-break-after: always;"></div>
 
@@ -505,54 +358,7 @@ double gamma = f01 * inv_area_abc;  // Weight for vertex 2</code></pre>
 		</ul>
 
 		<h3>Implementation</h3>
-		<p>I implemented texture mapping in three parts:</p>
-
-		<h4>1. <code>Texture::sample_nearest(Vector2D uv, int level)</code></h4>
-		<pre><code>// Convert UV to texture coordinates and wrap to [0, 1)
-float u = uv.x - floor(uv.x);
-float v = uv.y - floor(uv.y);
-
-// Convert to pixel coordinates and round to nearest
-int tx = (int)floor(u * mip.width);
-int ty = (int)floor(v * mip.height);
-
-// Clamp and return the nearest texel
-return mip.get_texel(tx, ty);</code></pre>
-
-		<h4>2. <code>Texture::sample_bilinear(Vector2D uv, int level)</code></h4>
-		<pre><code>// Convert UV to continuous texture coordinates
-float x = u * mip.width - 0.5f;  // Subtract 0.5 for pixel center
-float y = v * mip.height - 0.5f;
-
-// Get four surrounding texels
-int x0 = (int)floor(x), y0 = (int)floor(y);
-int x1 = x0 + 1, y1 = y0 + 1;
-
-// Get corner colors
-Color c00 = mip.get_texel(x0, y0);
-Color c10 = mip.get_texel(x1, y0);
-Color c01 = mip.get_texel(x0, y1);
-Color c11 = mip.get_texel(x1, y1);
-
-// Bilinear interpolation
-float fx = x - x0, fy = y - y0;
-Color c0 = c00 * (1.0f - fx) + c10 * fx;  // Bottom edge
-Color c1 = c01 * (1.0f - fx) + c11 * fx;  // Top edge
-Color result = c0 * (1.0f - fy) + c1 * fy; // Final interpolation</code></pre>
-
-		<h4>3. <code>RasterizerImp::rasterize_textured_triangle(...)</code></h4>
-		<p>The rasterization process:</p>
-		<ol>
-			<li>Compute bounding box and iterate through pixels (same as Task 1)</li>
-			<li>For each sample point, compute barycentric coordinates</li>
-			<li>Interpolate UV coordinates using barycentric coordinates:
-				<pre><code>Vector2D uv = Vector2D(u0, v0) * alpha + 
-              Vector2D(u1, v1) * beta + 
-              Vector2D(u2, v2) * gamma;</code></pre>
-			</li>
-			<li>Sample texture using the selected method (nearest or bilinear based on <code>psm</code>)</li>
-			<li>Store the sampled color in the sample buffer</li>
-		</ol>
+		<p>I implemented texture mapping in three parts: (1) Texture::sample_nearest: convert UV to texture coordinates, round to nearest texel, return color. (2) Texture::sample_bilinear: get four surrounding texels, interpolate horizontally then vertically. (3) RasterizerImp::rasterize_textured_triangle: compute bounding box and pixels, barycentric coordinates, interpolate UV with barycentric weights, sample texture (nearest or bilinear based on psm), store in sample buffer.</p>
 
 		<h3>Comparison Screenshots</h3>
 		<p>The following screenshots demonstrate the differences between nearest and bilinear sampling at different sample rates. The pixel inspector is positioned over an area where the difference is most visible.</p>
@@ -625,17 +431,8 @@ Color result = c0 * (1.0f - fy) + c1 * fy; // Final interpolation</code></pre>
 		<h4>How Mipmap Level is Calculated</h4>
 		<p>The mipmap level is determined by the rate of change of UV coordinates across screen space. We compute:</p>
 		<ol>
-			<li><b>UV derivatives</b>: How much UV coordinates change per screen pixel in x and y directions
-				<ul>
-					<li><code>du/dx, dv/dx</code>: Change in UV when moving one pixel right</li>
-					<li><code>du/dy, dv/dy</code>: Change in UV when moving one pixel down</li>
-				</ul>
-			</li>
-			<li><b>Level calculation</b>:
-				<pre><code>L = max(||du/dx||, ||dv/dy||)  // Maximum rate of change
-level = log2(L)                 // Logarithmic scale</code></pre>
-				When L = 1, we use level 0 (full resolution). When L = 2, we use level 1 (half resolution), etc.
-			</li>
+			<li><b>UV derivatives</b>: How much UV coordinates change per screen pixel in x and y directions (du/dx, dv/dx when moving one pixel right; du/dy, dv/dy when moving down).</li>
+			<li><b>Level calculation</b>: L = max of derivative lengths, level = log2(L). When L = 1 we use level 0 (full resolution); when L = 2 we use level 1 (half resolution), etc.</li>
 		</ol>
 
 		<h4>Level Sampling Methods</h4>
@@ -648,38 +445,19 @@ level = log2(L)                 // Logarithmic scale</code></pre>
 		<h3>Implementation</h3>
 		<p>I implemented level sampling in three parts:</p>
 
-		<h4>1. <code>Texture::get_level(const SampleParams&amp; sp)</code></h4>
-		<p>This function calculates the appropriate mipmap level based on UV derivatives:</p>
-		<pre><code>// Calculate UV derivatives: du/dx, dv/dx, du/dy, dv/dy
-Vector2D duv_dx = sp.p_dx_uv - sp.p_uv;
-Vector2D duv_dy = sp.p_dy_uv - sp.p_uv;
+		<h4>1. Texture::get_level(SampleParams)</h4>
+		<p>This function calculates the appropriate mipmap level based on UV derivatives (duv_dx, duv_dy from sample params, scale by texture size, L = max of derivative lengths, level = log2(L)).</p>
 
-// Scale up by texture dimensions to get derivatives in texture space
-Vector2D duv_dx_tex = Vector2D(duv_dx.x * width, duv_dx.y * height);
-Vector2D duv_dy_tex = Vector2D(duv_dy.x * width, duv_dy.y * height);
-
-// Calculate the maximum length of the derivatives
-float L = std::max(duv_dx_tex.norm(), duv_dy_tex.norm());
-
-// Calculate mipmap level: level = log2(L)
-float level = std::log2(std::max(1.0f, L));</code></pre>
-
-		<h4>2. <code>Texture::sample(const SampleParams&amp; sp)</code></h4>
-		<p>This function selects the appropriate sampling method based on <code>lsm</code> and <code>psm</code>:</p>
+		<h4>2. Texture::sample(SampleParams)</h4>
+		<p>This function selects the appropriate sampling method based on lsm and psm:</p>
 		<ul>
 			<li><b>L_ZERO</b>: Always samples from level 0</li>
 			<li><b>L_NEAREST</b>: Rounds the computed level to nearest integer and samples from that level</li>
 			<li><b>L_LINEAR</b>: Samples from two adjacent levels and linearly interpolates between them (trilinear filtering)</li>
 		</ul>
 
-		<h4>3. <code>RasterizerImp::rasterize_textured_triangle(...)</code></h4>
-		<p>For each sample point, I compute:</p>
-		<ul>
-			<li>UV coordinates at the sample point <code>(x, y)</code></li>
-			<li>UV coordinates at <code>(x+1, y)</code> for <code>p_dx_uv</code></li>
-			<li>UV coordinates at <code>(x, y+1)</code> for <code>p_dy_uv</code></li>
-		</ul>
-		<p>These are passed to <code>Texture::sample()</code> via a <code>SampleParams</code> struct to enable level computation.</p>
+		<h4>3. RasterizerImp::rasterize_textured_triangle</h4>
+		<p>For each sample point I compute UV at (x,y), (x+1,y), and (x,y+1), and pass them to Texture::sample() via SampleParams to enable level computation.</p>
 
 		<h3>Tradeoffs: Speed, Memory, and Antialiasing</h3>
 		<h4>Pixel Sampling (P_NEAREST vs P_LINEAR)</h4>
@@ -719,9 +497,9 @@ float level = std::log2(std::max(1.0f, L));</code></pre>
 		</ul>
 		<p><b>Memory:</b></p>
 		<ul>
-			<li><b>1 sample</b>: <code>width × height</code> samples in buffer</li>
-			<li><b>4 samples</b>: <code>4 × width × height</code> samples</li>
-			<li><b>16 samples</b>: <code>16 × width × height</code> samples</li>
+			<li><b>1 sample</b>: width × height samples in buffer</li>
+			<li><b>4 samples</b>: 4 × width × height samples</li>
+			<li><b>16 samples</b>: 16 × width × height samples</li>
 		</ul>
 		<p><b>Antialiasing:</b></p>
 		<ul>
@@ -789,7 +567,7 @@ float level = std::log2(std::max(1.0f, L));</code></pre>
 		<figure><img src="myimg/Extra-Credit-Beagle.png" alt="Competition Artwork"/></figure>
 
 		<h3>How I Created It</h3>
-		<p>I wrote a Python script (<code>src/generate_art.py</code>) that programmatically generates the SVG file. The script creates a stylized beagle using geometric shapes with the following features:</p>
+		<p>I wrote a Python script (src/generate_art.py) that programmatically generates the SVG file. The script creates a stylized beagle using geometric shapes with the following features:</p>
 
 		<h4>Algorithm</h4>
 		<ol>
@@ -834,31 +612,11 @@ float level = std::log2(std::max(1.0f, L));</code></pre>
 		<ul>
 			<li><b>Resolution</b>: 800×800 pixels as required</li>
 			<li><b>Background</b>: Black (#000000) to make colors pop</li>
-			<li><b>Elements Used</b>:
-				<ul>
-					<li><code>colortri</code> elements for the spiral triangles (with barycentric color interpolation)</li>
-					<li><code>polygon</code> elements for the central circles</li>
-					<li><code>rect</code> element for the background</li>
-				</ul>
-			</li>
+			<li><b>Elements Used</b>: colortri for triangles with barycentric color interpolation, polygon for circles, rect for background.</li>
 		</ul>
 
 		<h4>The Script</h4>
-		<p>The script (<code>src/generate_art.py</code>) is a Python program that:</p>
-		<ol>
-			<li>Defines parameters (number of spirals, segments, colors, etc.)</li>
-			<li>Generates SVG header and background</li>
-			<li>For each spiral:
-				<ul>
-					<li>Calculates positions along the spiral path using polar coordinates</li>
-					<li>Computes HSV colors based on position</li>
-					<li>Converts HSV to RGB</li>
-					<li>Outputs <code>colortri</code> elements with interpolated vertex colors</li>
-				</ul>
-			</li>
-			<li>Adds decorative central circles</li>
-			<li>Outputs the complete SVG file</li>
-		</ol>
+		<p>The script (src/generate_art.py) defines parameters, generates SVG header and background, builds shapes (ovals from triangles, polygons for ears/legs/tail), outputs colortri and polygon elements, and writes the complete SVG file.</p>
 
 		<h4>Key Features</h4>
 		<ul>
@@ -870,10 +628,7 @@ float level = std::log2(std::max(1.0f, L));</code></pre>
 		</ul>
 
 		<h4>Running the Script</h4>
-		<p>To regenerate the artwork:</p>
-		<pre><code>cd src
-python generate_art.py</code></pre>
-		<p>This will create <code>docs/competition.svg</code> which can then be rendered using the rasterizer.</p>
+		<p>To regenerate the artwork, run the script from the src directory; it creates docs/competition.svg which can then be rendered using the rasterizer.</p>
 
 		<h3>Artistic Intent</h3>
 		<p>The "Cute Beagle" combines the precision of geometric art with the warmth of a beloved pet. By using simple shapes and the rasterizer's barycentric color interpolation, I created a stylized yet recognizable representation of a beagle. The design demonstrates how complex forms can be broken down into basic geometric primitives while maintaining character and charm. The authentic beagle color palette and characteristic features (long ears, expressive eyes, distinctive markings) make the dog instantly recognizable, while the geometric construction showcases the technical capabilities of the rasterizer.</p>
